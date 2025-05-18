@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">DCAdblocker</string>
+    <string name="xposed_description">디시인사이드 안드로이드 어플 광고차단기</string>
+</resources>
