@@ -1,17 +1,24 @@
 package com.green1052.dcadblocker
 
+import android.content.res.XResources
 import android.net.Uri
+import android.util.TypedValue
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import de.robv.android.xposed.IXposedHookInitPackageResources
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
+import de.robv.android.xposed.callbacks.XC_InitPackageResources.InitPackageResourcesParam
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.io.ByteArrayInputStream
 
-class MainHook : IXposedHookLoadPackage {
+private const val PACKAGE_NAME = "com.dcinside.app.android"
+
+class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
+
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        if (lpparam.packageName != "com.dcinside.app.android") return
+        if (lpparam.packageName != PACKAGE_NAME) return
 
         XposedHelpers.findAndHookMethod(
             "android.webkit.WebViewClient",
@@ -35,5 +42,28 @@ class MainHook : IXposedHookLoadPackage {
                     )
                 }
             })
+    }
+
+    override fun handleInitPackageResources(resparam: InitPackageResourcesParam) {
+        if (resparam.packageName != "com.dcinside.app.android") return
+
+        val adDimens = listOf(
+            "ad_minimum_height",
+            "image_ad_height",
+            "script_ad_size",
+            "script_no_image_height",
+            "script_no_image_width"
+        )
+
+        val zero = XResources.DimensionReplacement(0f, TypedValue.COMPLEX_UNIT_DIP)
+
+        for (dimenName in adDimens) {
+            resparam.res.setReplacement(
+                resparam.packageName,
+                "dimen",
+                dimenName,
+                zero
+            )
+        }
     }
 }
