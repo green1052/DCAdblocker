@@ -3,7 +3,6 @@ package com.green1052.dcadblocker
 import android.content.res.XResources
 import android.net.Uri
 import android.util.TypedValue
-import android.view.View
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import de.robv.android.xposed.IXposedHookInitPackageResources
@@ -17,7 +16,6 @@ import java.io.ByteArrayInputStream
 private const val PACKAGE_NAME = "com.dcinside.app.android"
 
 class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
-
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != PACKAGE_NAME) return
 
@@ -46,7 +44,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
     }
 
     override fun handleInitPackageResources(resparam: InitPackageResourcesParam) {
-        if (resparam.packageName != "com.dcinside.app.android") return
+        if (resparam.packageName != PACKAGE_NAME) return
 
         val adDimens = listOf(
             "ad_minimum_height",
