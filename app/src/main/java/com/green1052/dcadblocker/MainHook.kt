@@ -1,7 +1,5 @@
 package com.green1052.dcadblocker
 
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
 import android.content.res.XResources
 import android.net.Uri
 import android.util.TypedValue
@@ -10,18 +8,69 @@ import android.webkit.WebView
 import de.robv.android.xposed.IXposedHookInitPackageResources
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XC_MethodReplacement
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_InitPackageResources.InitPackageResourcesParam
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.io.ByteArrayInputStream
 
-
 private const val PACKAGE_NAME = "com.dcinside.app.android"
-private const val DC_SIGNATURE = "E6:B2:71:44:A2:76:60:B1:E0:06:08:FA:45:D3:19:06:5D:97:D0:A7:1F:B5:4B:8C:A1:75:6E:83:46:EC:29:DD"
 
 class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
+    private fun hookUserId(
+        className: String,
+        targetMethod: String,
+        userIdMethod: String,
+        classLoader: ClassLoader
+    ) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                className,
+                classLoader,
+                targetMethod,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val userId = XposedHelpers.callMethod(
+                            param.thisObject,
+                            userIdMethod
+                        ) as? String ?: return
+
+                        val result = param.result.toString()
+
+                        if (!result.contains(userId))
+                            param.result = "$result($userId)"
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+        }
+    }
+
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != PACKAGE_NAME) return
+
+        hookUserId(
+            className = "com.dcinside.app.model.Q",
+            targetMethod = "Z0",
+            userIdMethod = "n",
+            classLoader = lpparam.classLoader
+        )
+
+        hookUserId(
+            className = "com.dcinside.app.response.j",
+            targetMethod = "X",
+            userIdMethod = "f0",
+            classLoader = lpparam.classLoader
+        )
+
+        hookUserId(
+            className = "com.dcinside.app.response.PostItem",
+            targetMethod = "z",
+            userIdMethod = "N",
+            classLoader = lpparam.classLoader
+        )
 
         XposedHelpers.findAndHookMethod(
             "android.webkit.WebViewClient",
@@ -42,25 +91,40 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
                 }
             })
 
-        XposedHelpers.findAndHookMethod(
-            "android.content.pm.PackageManager",
-            lpparam.classLoader,
-            "getPackageInfo",
-            String::class.java,
-            Int::class.java,
-            object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam?) {
-                    super.beforeHookedMethod(param)
-                    val packageName = param?.args?.get(0) as String
+        val targetClasses = listOf(
+            "com.dcinside.app.view.PostReadImageAdView",
+            "com.dcinside.app.ad.support.z",
+            "com.kakao.adfit.AdFitSdk",
+            "com.google.android.gms.ads.AdView",
+            "com.kakao.adfit.ads.p335ba.BannerAdView",
+            "com.igaworks.ssp.part.banner.AdPopcornSSPBannerAd",
+            "com.gomfactory.adpie.sdk.AdView",
+            "com.fsn.cauly.CaulyAdView",
+            "com.nasmedia.admixerssp.ads.AdView"
+        )
 
-                    if (packageName == PACKAGE_NAME) return
+        targetClasses.forEach { className ->
+            try {
+                val clazz = XposedHelpers.findClass(className, lpparam.classLoader)
 
-                    val fakeSignature = Signature(DC_SIGNATURE)
-                    val fakePackageInfo = PackageInfo()
-                    fakePackageInfo.signatures = arrayOf(fakeSignature)
-                    param.result = fakePackageInfo
+                clazz.declaredMethods.forEach { method ->
+                    try {
+                        XposedHelpers.findAndHookMethod(
+                            clazz,
+                            method.name,
+                            object : XC_MethodReplacement() {
+                                override fun replaceHookedMethod(param: MethodHookParam?): Any? {
+                                    return null
+                                }
+                            })
+                    } catch (e: Throwable) {
+
+                    }
                 }
-            })
+            } catch (e: Throwable) {
+
+            }
+        }
     }
 
     override fun handleInitPackageResources(resparam: InitPackageResourcesParam) {
