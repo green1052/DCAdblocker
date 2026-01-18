@@ -1,23 +1,61 @@
 package com.green1052.dcadblocker
 
-import android.content.res.XResources
 import android.net.Uri
-import android.util.TypedValue
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import de.robv.android.xposed.IXposedHookInitPackageResources
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import de.robv.android.xposed.IXposedHookLoadPackage
+import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_InitPackageResources.InitPackageResourcesParam
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.util.zip.ZipFile
 
 private const val PACKAGE_NAME = "com.dcinside.app.android"
 
-class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
+class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
+    companion object {
+        var modulePath: String? = null
+        var banMap: Map<String, List<String>> = emptyMap()
+        var ipMap: Map<String, String> = emptyMap()
+    }
+
+    override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
+        modulePath = startupParam.modulePath
+        loadAssets()
+    }
+
+    private fun loadAssets() {
+        try {
+            modulePath?.let { path ->
+                ZipFile(path).use { zip ->
+                    val banEntry = zip.getEntry("assets/ban.json")
+                    if (banEntry != null) {
+                        zip.getInputStream(banEntry).use { stream ->
+                            val type = object : TypeToken<Map<String, List<String>>>() {}.type
+                            banMap = Gson().fromJson(InputStreamReader(stream), type)
+                        }
+                    }
+
+                    val ipEntry = zip.getEntry("assets/ip.json")
+                    if (ipEntry != null) {
+                        zip.getInputStream(ipEntry).use { stream ->
+                            val type = object : TypeToken<Map<String, String>>() {}.type
+                            ipMap = Gson().fromJson(InputStreamReader(stream), type)
+                        }
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+        }
+    }
+
     private fun hookUserId(
         className: String,
         targetMethod: String,
@@ -38,8 +76,41 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
 
                         val result = param.result.toString()
 
-                        if (!result.contains(userId))
-                            param.result = "$result($userId)"
+                        if (result.contains(userId)) return
+
+                        val info =
+                            banMap.filter { it.value.contains(userId) }.keys.joinToString(", ")
+                        val banInfo = if (info.isNotEmpty()) " [$info]" else ""
+
+                        param.result = "$result($userId)$banInfo"
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+        }
+    }
+
+    private fun hookUserIp(
+        className: String,
+        targetMethod: String,
+        classLoader: ClassLoader
+    ) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                className,
+                classLoader,
+                targetMethod,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val result = param.result.toString()
+
+                        if (result.isEmpty()) return
+
+                        val info = ipMap[result]
+                        val ipInfo = if (info != null) " [$info]" else ""
+
+                        param.result = "$result$ipInfo"
                     }
                 }
             )
@@ -58,10 +129,22 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
             classLoader = lpparam.classLoader
         )
 
+        hookUserIp(
+            className = "com.dcinside.app.model.Q",
+            targetMethod = "R0",
+            classLoader = lpparam.classLoader
+        )
+
         hookUserId(
             className = "com.dcinside.app.response.j",
             targetMethod = "X",
             userIdMethod = "f0",
+            classLoader = lpparam.classLoader
+        )
+
+        hookUserIp(
+            className = "com.dcinside.app.response.j",
+            targetMethod = "R",
             classLoader = lpparam.classLoader
         )
 
@@ -70,6 +153,66 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
             targetMethod = "z",
             userIdMethod = "N",
             classLoader = lpparam.classLoader
+        )
+
+        hookUserIp(
+            className = "com.dcinside.app.response.PostItem",
+            targetMethod = "u",
+            classLoader = lpparam.classLoader
+        )
+
+        try {
+            XposedHelpers.findAndHookMethod(
+                "com.dcinside.app.model.S.a",
+                lpparam.classLoader,
+                "j",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val original = param.result as String
+
+                        val pattern =
+                            """&lt;img\s+src=&quot;(.+?)&quot;.*?class=&quot;gif&quot;.*?data-mp4=&quot;(.+?)&quot;.*?&gt;""".toRegex()
+                        val result = pattern.replace(original) { matchResult ->
+                            val posterValue = matchResult.groupValues[1]
+                            val videoValue = matchResult.groupValues[2]
+                            """&lt;video controls playsinline autoplay muted loop poster=&quot;$posterValue&quot; style=&quot;width:100%;max-width:100%;&quot;&gt;&lt;source src=&quot;$videoValue&quot; type=&quot;video/mp4&quot;&gt;&lt;/video&gt;"""
+                        }
+
+                        val imgPattern = """&lt;img\s+""".toRegex()
+                        val finalResult = imgPattern.replace(result) {
+                            """&lt;img loading=&quot;lazy&quot; """
+                        }
+
+                        param.result = finalResult
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+        }
+
+        XposedHelpers.findAndHookMethod(
+            "com.dcinside.app.view.F",
+            lpparam.classLoader,
+            "k0",
+            "androidx.lifecycle.LifecycleOwner",
+            $$"com.dcinside.app.read.C$a",
+            object : XC_MethodReplacement() {
+                override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                    return null
+                }
+            }
+        )
+
+        XposedHelpers.findAndHookMethod(
+            "com.kakao.adfit.ads.ba.BannerAdView",
+            lpparam.classLoader,
+            "loadAd",
+            object : XC_MethodReplacement() {
+                override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                    return null
+                }
+            }
         )
 
         XposedHelpers.findAndHookMethod(
@@ -89,62 +232,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookInitPackageResources {
                         "text/plain", "UTF-8", ByteArrayInputStream("".toByteArray())
                     )
                 }
-            })
-
-        val targetClasses = listOf(
-            "com.dcinside.app.view.PostReadImageAdView",
-            "com.dcinside.app.ad.support.z",
-            "com.kakao.adfit.AdFitSdk",
-            "com.google.android.gms.ads.AdView",
-            "com.kakao.adfit.ads.p335ba.BannerAdView",
-            "com.igaworks.ssp.part.banner.AdPopcornSSPBannerAd",
-            "com.gomfactory.adpie.sdk.AdView",
-            "com.fsn.cauly.CaulyAdView",
-            "com.nasmedia.admixerssp.ads.AdView"
-        )
-
-        targetClasses.forEach { className ->
-            try {
-                val clazz = XposedHelpers.findClass(className, lpparam.classLoader)
-
-                clazz.declaredMethods.forEach { method ->
-                    try {
-                        XposedHelpers.findAndHookMethod(
-                            clazz,
-                            method.name,
-                            object : XC_MethodReplacement() {
-                                override fun replaceHookedMethod(param: MethodHookParam?): Any? {
-                                    return null
-                                }
-                            })
-                    } catch (e: Throwable) {
-
-                    }
-                }
-            } catch (e: Throwable) {
-
             }
-        }
-    }
-
-    override fun handleInitPackageResources(resparam: InitPackageResourcesParam) {
-        if (resparam.packageName != PACKAGE_NAME) return
-
-        val adDimens = listOf(
-            "ad_main_small_native",
-            "ad_minimum",
-            "ad_minimum_tall",
-            "main_ad_live_best_spacing",
-            "read_ad_minimum",
-            "image_ad"
         )
-
-        val zero = XResources.DimensionReplacement(0f, TypedValue.COMPLEX_UNIT_DIP)
-
-        for (dimenName in adDimens) {
-            resparam.res.setReplacement(
-                resparam.packageName, "dimen", dimenName, zero
-            )
-        }
     }
 }
