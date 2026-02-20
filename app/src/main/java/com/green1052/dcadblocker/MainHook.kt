@@ -137,14 +137,14 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         hookUserId(
             className = "com.dcinside.app.response.j",
-            targetMethod = "X",
+            targetMethod = "Y",
             userIdMethod = "f0",
             classLoader = lpparam.classLoader
         )
 
         hookUserIp(
             className = "com.dcinside.app.response.j",
-            targetMethod = "R",
+            targetMethod = "S",
             classLoader = lpparam.classLoader
         )
 
@@ -180,7 +180,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
                         val imgPattern = """&lt;img\s+""".toRegex()
                         val finalResult = imgPattern.replace(result) {
-                            """&lt;img loading=&quot;lazy&quot; """
+                            """&lt;img loading=&quot;eager&quot; """
                         }
 
                         param.result = finalResult
