@@ -123,65 +123,93 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (lpparam.packageName != PACKAGE_NAME) return
 
         hookUserId(
-            className = "com.dcinside.app.model.Q",
-            targetMethod = "Z0",
+            className = "com.dcinside.app.model.W",
+            targetMethod = "a1",
             userIdMethod = "n",
             classLoader = lpparam.classLoader
         )
 
         hookUserIp(
-            className = "com.dcinside.app.model.Q",
-            targetMethod = "R0",
+            className = "com.dcinside.app.model.W",
+            targetMethod = "S0",
             classLoader = lpparam.classLoader
         )
 
         hookUserId(
             className = "com.dcinside.app.response.j",
             targetMethod = "Y",
-            userIdMethod = "f0",
+            userIdMethod = "g0",
             classLoader = lpparam.classLoader
         )
 
         hookUserIp(
             className = "com.dcinside.app.response.j",
-            targetMethod = "S",
+            targetMethod = "R",
             classLoader = lpparam.classLoader
         )
 
         hookUserId(
             className = "com.dcinside.app.response.PostItem",
-            targetMethod = "z",
-            userIdMethod = "N",
+            targetMethod = "w",
+            userIdMethod = "M",
             classLoader = lpparam.classLoader
         )
 
         hookUserIp(
             className = "com.dcinside.app.response.PostItem",
-            targetMethod = "u",
+            targetMethod = "q",
             classLoader = lpparam.classLoader
         )
 
         try {
             XposedHelpers.findAndHookMethod(
-                "com.dcinside.app.model.S.a",
+                "com.dcinside.app.model.W",
                 lpparam.classLoader,
-                "j",
+                "Z0",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        val original = param.result as String
+                        val original = param.result as? String ?: return
 
-                        val pattern =
-                            """&lt;img\s+src=&quot;(.+?)&quot;.*?class=&quot;gif&quot;.*?data-mp4=&quot;(.+?)&quot;.*?&gt;""".toRegex()
-                        val result = pattern.replace(original) { matchResult ->
-                            val posterValue = matchResult.groupValues[1]
-                            val videoValue = matchResult.groupValues[2]
-                            """&lt;video controls playsinline autoplay muted loop poster=&quot;$posterValue&quot; style=&quot;width:100%;max-width:100%;&quot;&gt;&lt;source src=&quot;$videoValue&quot; type=&quot;video/mp4&quot;&gt;&lt;/video&gt;"""
+                        XposedBridge.log(original)
+
+                        val imgPattern = """<img\b[^>]*>""".toRegex()
+                        val imgSrcPattern = """\bsrc="([^"]+)"""".toRegex()
+                        val mp4Pattern = """\bdata-mp4="([^"]+)"""".toRegex()
+                        val gifClassPattern = """\bclass="[^"]*\bgif\b[^"]*"""".toRegex()
+
+                        val gifFixedResult = imgPattern.replace(original) { matchResult ->
+                            val tag = matchResult.value
+
+                            val posterValue = imgSrcPattern.find(tag)?.groupValues?.get(1)
+                            val videoValue = mp4Pattern.find(tag)?.groupValues?.get(1)
+                            val isGif = gifClassPattern.containsMatchIn(tag)
+
+                            if (posterValue != null && videoValue != null && isGif) {
+                                """<video controls playsinline autoplay muted loop poster="$posterValue" style="width:100%;height:300px;"><source src="$videoValue" type="video/mp4"></video>"""
+                            } else {
+                                tag.replaceFirst("""<img\b""".toRegex(), """<img loading="eager"""")
+                            }
                         }
 
-                        val imgPattern = """&lt;img\s+""".toRegex()
-                        val finalResult = imgPattern.replace(result) {
-                            """&lt;img loading=&quot;eager&quot; """
+                        val iframePattern = """<iframe\b[^>]*>""".toRegex()
+                        val iframeSrcPattern = """\bsrc="([^"]+)"""".toRegex()
+
+                        val finalResult = iframePattern.replace(gifFixedResult) { matchResult ->
+                            val iframeTag = matchResult.value
+                            val srcValue = iframeSrcPattern.find(iframeTag)?.groupValues?.get(1)
+
+                            if (
+                                srcValue != null &&
+                                srcValue.startsWith("https://app.dcinside.com/movie/player") &&
+                                srcValue.contains("is_copy=0")
+                            ) {
+                                iframeTag.replace("is_copy=0", "is_copy=1")
+                            } else {
+                                iframeTag
+                            }
                         }
+
+                        XposedBridge.log(finalResult)
 
                         param.result = finalResult
                     }
@@ -191,18 +219,18 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             XposedBridge.log(t)
         }
 
-        XposedHelpers.findAndHookMethod(
-            "com.dcinside.app.view.F",
-            lpparam.classLoader,
-            "k0",
-            "androidx.lifecycle.LifecycleOwner",
-            $$"com.dcinside.app.read.C$a",
-            object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any? {
-                    return null
-                }
-            }
-        )
+//        XposedHelpers.findAndHookMethod(
+//            "com.dcinside.app.view.F",
+//            lpparam.classLoader,
+//            "k0",
+//            "androidx.lifecycle.LifecycleOwner",
+//            $$"com.dcinside.app.read.C$a",
+//            object : XC_MethodReplacement() {
+//                override fun replaceHookedMethod(param: MethodHookParam): Any? {
+//                    return null
+//                }
+//            }
+//        )
 
         XposedHelpers.findAndHookMethod(
             "com.kakao.adfit.ads.ba.BannerAdView",
