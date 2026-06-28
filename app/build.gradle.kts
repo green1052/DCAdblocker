@@ -44,5 +44,5 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    compileOnly(libs.xposed.api)
+    compileOnly(libs.libxposed.api)
 }
