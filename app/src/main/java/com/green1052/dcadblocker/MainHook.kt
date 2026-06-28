@@ -14,6 +14,7 @@ import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
+import java.util.Vector
 import java.util.zip.ZipFile
 
 private const val PACKAGE_NAME = "com.dcinside.app.android"
@@ -21,7 +22,7 @@ private const val PACKAGE_NAME = "com.dcinside.app.android"
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     companion object {
         var modulePath: String? = null
-        var banMap: Map<String, List<String>> = emptyMap()
+        var banMap: Map<String, Vector<String>> = emptyMap()
         var ipMap: Map<String, String> = emptyMap()
     }
 
@@ -37,7 +38,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                     val banEntry = zip.getEntry("assets/ban.json")
                     if (banEntry != null) {
                         zip.getInputStream(banEntry).use { stream ->
-                            val type = object : TypeToken<Map<String, List<String>>>() {}.type
+                            val type = object : TypeToken<Map<String, Vector<String>>>() {}.type
                             banMap = Gson().fromJson(InputStreamReader(stream), type)
                         }
                     }

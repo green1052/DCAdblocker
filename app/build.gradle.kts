@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.green1052.dcadblocker"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.green1052.dcadblocker"
